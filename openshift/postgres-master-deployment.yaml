@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-master
+  template:
+    metadata:
+      labels:
+        app: postgres-master
+    spec:
+      serviceAccountName: postgres-sa
+      containers:
+        - name: postgres-master
+          image: 291981657049.dkr.ecr.ap-south-1.amazonaws.com/postgres-master:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-password
+            - name: REPLICATION_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-user
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/master
+          volumeMounts:
+            - name: master-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: master-data
+          persistentVolumeClaim:
+            claimName: postgres-master-pvc

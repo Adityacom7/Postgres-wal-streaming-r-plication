@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-slave
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-slave
+  template:
+    metadata:
+      labels:
+        app: postgres-slave
+    spec:
+      serviceAccountName: postgres-sa
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              if [ -d /var/lib/postgresql/data ]; then
+                echo "Fixing permissions on /var/lib/postgresql/data"
+                chown -R 999:999 /var/lib/postgresql/data || true
+                chmod -R 0700 /var/lib/postgresql/data || true
+              fi
+          volumeMounts:
+            - name: slave-data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres-slave
+          image: 291981657049.dkr.ecr.ap-south-1.amazonaws.com/postgres-slave:latest
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-password
+            - name: REPLICATION_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-user
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-password
+            - name: MASTER_HOST
+              value: postgres-master
+          volumeMounts:
+            - name: slave-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: slave-data
+          emptyDir: {}

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-slave
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-slave
+  template:
+    metadata:
+      labels:
+        app: postgres-slave
+    spec:
+      serviceAccountName: postgres-sa
+      securityContext:
+        fsGroup: 999
+        seLinuxOptions:
+          level: "s0:c123,c456"
+      containers:
+        - name: postgres-slave
+          image: 291981657049.dkr.ecr.ap-south-1.amazonaws.com/postgres-slave:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-password
+            - name: REPLICATION_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-user
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: replication-password
+            - name: MASTER_HOST
+              value: postgres-master
+            - name: MASTER_PORT
+              value: "5432"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/slave
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              rm -rf /var/lib/postgresql/data/slave/* 2>/dev/null || true
+              until pg_isready -h "$MASTER_HOST" -p "$MASTER_PORT" -U "$REPLICATION_USER"; do
+                echo "Waiting for master..."
+                sleep 2
+              done
+              PGPASSWORD=$REPLICATION_PASSWORD pg_basebackup -h "$MASTER_HOST" -D /var/lib/postgresql/data/slave -U "$REPLICATION_USER" -v -P -W -R
+              touch /var/lib/postgresql/data/slave/standby.signal
+              exec docker-entrypoint.sh postgres
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: slave-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: slave-data
+          persistentVolumeClaim:
+            claimName: postgres-slave-pvc

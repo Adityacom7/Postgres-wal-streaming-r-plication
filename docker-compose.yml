@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres-master:
+    build:
+      context: ./postgres/master
+    container_name: postgres-master
+    environment:
+      POSTGRES_DB: scandb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - master:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-slave:
+    build:
+      context: ./postgres/slave
+    container_name: postgres-slave
+    environment:
+      POSTGRES_DB: scandb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      MASTER_HOST: postgres-master
+      MASTER_PORT: 5432
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicapass
+    ports:
+      - "5433:5432"
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    volumes:
+      - slave:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  flask-app:
+    build:
+      context: ./app
+    container_name: flask-app
+    environment:
+      DB_MASTER_HOST: postgres-master
+      DB_SLAVE_HOST: postgres-slave
+      DB_NAME: scandb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "5001:5000"
+    depends_on:
+      - postgres-master
+      - postgres-slave
+    networks:
+      - app-network
+
+volumes:
+  master:
+  slave:
+
+networks:
+  app-network:
+    driver: bridge
